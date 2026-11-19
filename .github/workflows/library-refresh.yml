@@ -1,0 +1,49 @@
+name: Refresh library
+
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch: {}
+  push:
+    paths: ['refresh.mjs', 'refresh.test.mjs', 'creators.json', 'library-refresh.yml']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: library-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Arrange files
+        run: |
+          mkdir -p robot
+          cp refresh.mjs refresh.test.mjs creators.json robot/
+      - name: Test
+        run: node --test robot/refresh.test.mjs
+      - name: Update library
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          LIBRARY_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          WINDOW_DAYS: '180'
+          DAILY_QUOTA_BUDGET: '8000'
+          REFRESH_AFTER_HOURS: '72'
+        run: node robot/refresh.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
